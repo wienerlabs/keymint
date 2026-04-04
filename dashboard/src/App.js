@@ -27,7 +27,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen">
       <AsciiWave />
       <div className="relative" style={{ zIndex: 1 }}>
         <Navbar

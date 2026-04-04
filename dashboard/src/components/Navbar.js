@@ -10,7 +10,7 @@ export default function Navbar({ activePage, onNavigate, wallet, onWalletConnect
   ];
 
   return (
-    <nav className="border-b-2 border-black bg-white sticky top-0 z-50">
+    <nav className="border-b-2 border-black bg-white/80 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-16">
         <div className="flex items-center gap-6">
           <button
