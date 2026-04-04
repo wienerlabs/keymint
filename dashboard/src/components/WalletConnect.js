@@ -1,10 +1,7 @@
 import { useState, useEffect } from "react";
 import { fetchWalletList } from "../hooks/useWallet";
-
-function shortenAddress(addr) {
-  if (!addr || addr.length < 12) return addr;
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-}
+import { shortenAddress } from "../utils/format";
+import StatusDot from "./StatusDot";
 
 export default function WalletConnect({ wallet, onConnect, onDisconnect, loading }) {
   const [walletList, setWalletList] = useState([]);
@@ -38,10 +35,10 @@ export default function WalletConnect({ wallet, onConnect, onDisconnect, loading
     return (
       <div className="flex items-center gap-3">
         <div className="border-2 border-black rounded-xl px-4 py-2 flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-green-500 border border-black" />
+          <StatusDot status="online" pulse />
           <div>
             <div className="text-xs text-gray-500">{wallet.name}</div>
-            <div className="font-mono text-sm font-bold">
+            <div className="text-sm font-bold">
               {shortenAddress(wallet.solanaAddress)}
             </div>
           </div>
@@ -87,7 +84,7 @@ export default function WalletConnect({ wallet, onConnect, onDisconnect, loading
               className="w-full px-4 py-3 text-left hover:bg-accent1/10 transition-colors border-b border-gray-100 last:border-0"
             >
               <div className="font-bold text-sm">{w.name}</div>
-              <div className="font-mono text-xs text-gray-500 mt-1">
+              <div className="text-xs text-gray-500 mt-1">
                 {shortenAddress(w.solanaAddress)}
               </div>
             </button>

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import Card from "./Card";
+import Badge from "./Badge";
+import CopyButton from "./CopyButton";
 import { useQueryStream } from "../hooks/useQueryStream";
 
 const STEP_LABELS = {
@@ -60,19 +62,23 @@ export default function QueryPanel({ wallet, onComplete }) {
     reset();
   }
 
-  // Extract proof data from SSE steps
   const priceStep = steps.find((s) => s.step === "price_found");
-  const walletStep = steps.find((s) => s.step === "wallet_resolved");
   const completeStep = steps.find((s) => s.step === "complete");
 
   return (
     <Card>
-      <h2 className="text-lg font-bold mb-4">Live Query</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold">Live Query</h2>
+        {running && <Badge variant="yellow">Running</Badge>}
+        {completeStep && !running && <Badge variant="green">Complete</Badge>}
+      </div>
 
       {!wallet ? (
-        <p className="text-sm text-gray-500">
-          Connect an OWS wallet to start querying.
-        </p>
+        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
+          <div className="text-gray-400 text-sm">
+            Connect an OWS wallet to start querying.
+          </div>
+        </div>
       ) : (
         <>
           {/* Input form */}
@@ -85,7 +91,7 @@ export default function QueryPanel({ wallet, onComplete }) {
                 value={selectedEndpoint}
                 onChange={(e) => setSelectedEndpoint(e.target.value)}
                 disabled={running}
-                className="w-full border-2 border-black rounded-lg px-3 py-2 text-sm"
+                className="w-full border-2 border-black rounded-lg px-3 py-2 text-sm bg-white"
               >
                 {ENDPOINTS.map((ep) => (
                   <option key={ep.value} value={ep.value}>
@@ -106,7 +112,7 @@ export default function QueryPanel({ wallet, onComplete }) {
                   onChange={(e) => setAddress(e.target.value)}
                   disabled={running}
                   placeholder="0x..."
-                  className="w-full border-2 border-black rounded-lg px-3 py-2 text-sm font-mono"
+                  className="w-full border-2 border-black rounded-lg px-3 py-2 text-sm"
                 />
               </div>
             )}
@@ -122,7 +128,7 @@ export default function QueryPanel({ wallet, onComplete }) {
                   onChange={(e) => setFungibleId(e.target.value)}
                   disabled={running}
                   placeholder="eth, bitcoin, solana..."
-                  className="w-full border-2 border-black rounded-lg px-3 py-2 text-sm font-mono"
+                  className="w-full border-2 border-black rounded-lg px-3 py-2 text-sm"
                 />
               </div>
             )}
@@ -169,7 +175,7 @@ export default function QueryPanel({ wallet, onComplete }) {
                         isLast && running ? "text-black font-bold" : "text-gray-600"
                       }`}
                     >
-                      <span className={isLast && running ? "animate-pulse" : ""}>
+                      <span className={isLast && running ? "animate-pulse-dot" : ""}>
                         {step.step === "confirmed" || step.step === "complete"
                           ? "\u2713"
                           : isLast && running
@@ -201,7 +207,7 @@ export default function QueryPanel({ wallet, onComplete }) {
                 })}
                 {running && (
                   <div className="flex items-center gap-2 text-sm text-gray-400">
-                    <span className="animate-pulse">{"\u25CF"}</span>
+                    <span className="animate-pulse-dot">{"\u25CF"}</span>
                     <span>Processing...</span>
                   </div>
                 )}
@@ -217,7 +223,7 @@ export default function QueryPanel({ wallet, onComplete }) {
             </div>
           )}
 
-          {/* x402 Proof — collapsible */}
+          {/* x402 Proof */}
           {completeStep && (
             <div className="border-2 border-black rounded-xl mb-4 overflow-hidden">
               <button
@@ -233,15 +239,15 @@ export default function QueryPanel({ wallet, onComplete }) {
                     <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">
                       HTTP 402 Response
                     </div>
-                    <pre className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-mono overflow-auto">
+                    <pre className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs overflow-auto">
 {`HTTP/1.1 402 Payment Required
 Content-Type: application/json
 
 {
   "status": 402,
   "message": "Payment Required",
-  "price": ${priceStep?.price || "—"},
-  "priceUSD": ${priceStep?.priceUSD || "—"},
+  "price": ${priceStep?.price || "\u2014"},
+  "priceUSD": ${priceStep?.priceUSD || "\u2014"},
   "currency": "USDC",
   "network": "solana-devnet"
 }`}
@@ -253,7 +259,7 @@ Content-Type: application/json
                       <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">
                         Payment Amount
                       </div>
-                      <div className="font-mono font-bold">
+                      <div className="font-bold">
                         ${completeStep.priceUSD} USDC
                         <span className="text-gray-400 font-normal ml-1">
                           ({completeStep.price} base units)
@@ -264,8 +270,11 @@ Content-Type: application/json
                       <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">
                         Payer (OWS Wallet)
                       </div>
-                      <div className="font-mono text-xs break-all">
-                        {completeStep.payer}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs break-all">
+                          {completeStep.payer}
+                        </span>
+                        <CopyButton text={completeStep.payer} />
                       </div>
                     </div>
                   </div>
@@ -274,8 +283,11 @@ Content-Type: application/json
                     <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">
                       Solana TX Hash
                     </div>
-                    <div className="font-mono text-xs break-all mb-2">
-                      {completeStep.txSignature}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs break-all">
+                        {completeStep.txSignature}
+                      </span>
+                      <CopyButton text={completeStep.txSignature} />
                     </div>
                     <a
                       href={completeStep.explorerUrl}
@@ -291,8 +303,11 @@ Content-Type: application/json
                     <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">
                       Payment Receiver (Publisher)
                     </div>
-                    <div className="font-mono text-xs break-all">
-                      {completeStep.publisher || "—"}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs break-all">
+                        {completeStep.publisher || "\u2014"}
+                      </span>
+                      {completeStep.publisher && <CopyButton text={completeStep.publisher} />}
                     </div>
                     {completeStep.publisherPDA && (
                       <div className="text-xs text-gray-400 mt-1">
@@ -323,7 +338,7 @@ Content-Type: application/json
                   </a>
                 )}
               </div>
-              <pre className="text-xs font-mono overflow-auto max-h-64 bg-white border border-gray-200 rounded-lg p-3">
+              <pre className="text-xs overflow-auto max-h-64 bg-white border border-gray-200 rounded-lg p-3">
                 {JSON.stringify(result.data, null, 2)?.slice(0, 3000)}
                 {JSON.stringify(result.data, null, 2)?.length > 3000
                   ? "\n... (truncated)"
