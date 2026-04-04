@@ -10,17 +10,20 @@ export default function Navbar({ activePage, onNavigate, wallet, onWalletConnect
   ];
 
   return (
-    <nav className="border-b-2 border-black bg-white">
+    <nav className="border-b-2 border-black bg-white/80 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-16">
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
+          <button
+            onClick={() => onNavigate("overview")}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
             <img
               src="/keymint.png"
               alt="Keymint"
-              className="h-7 w-auto"
+              className="h-14 w-auto"
             />
-            <span className="font-bold text-lg">Keymint</span>
-          </div>
+            <span className="font-bold text-lg tracking-tight">Keymint</span>
+          </button>
           <div className="flex gap-1">
             {pages.map((page) => (
               <button
