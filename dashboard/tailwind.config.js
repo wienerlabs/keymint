@@ -4,6 +4,7 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
+        sans: ['"Space Grotesk"', "-apple-system", "BlinkMacSystemFont", "sans-serif"],
         mono: ['"AuxMono"', "monospace"],
       },
       colors: {
