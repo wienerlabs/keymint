@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import Navbar from "./components/Navbar";
+import AsciiWave from "./components/AsciiWave";
 import Overview from "./pages/Overview";
 import Analytics from "./pages/Analytics";
 import Query from "./pages/Query";
@@ -27,15 +28,18 @@ function App() {
 
   return (
     <div className="min-h-screen bg-white">
-      <Navbar
-        activePage={page}
-        onNavigate={setPage}
-        wallet={wallet}
-        onWalletConnect={connect}
-        onWalletDisconnect={disconnect}
-        walletLoading={loading}
-      />
-      {pages[page]}
+      <AsciiWave />
+      <div className="relative" style={{ zIndex: 1 }}>
+        <Navbar
+          activePage={page}
+          onNavigate={setPage}
+          wallet={wallet}
+          onWalletConnect={connect}
+          onWalletDisconnect={disconnect}
+          walletLoading={loading}
+        />
+        {pages[page]}
+      </div>
     </div>
   );
 }
