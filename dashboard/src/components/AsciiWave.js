@@ -33,7 +33,7 @@ export default function AsciiWave() {
     function draw() {
       const t = frameRef.current * 0.015;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = '16px "AuxMono", monospace';
+      ctx.font = '18px "AuxMono", monospace';
       ctx.textBaseline = "middle";
 
       for (let row = 0; row < rows; row++) {
@@ -50,7 +50,7 @@ export default function AsciiWave() {
           const colorIdx =
             colorWave < -0.33 ? 0 : colorWave < 0.33 ? 1 : 2;
 
-          const opacity = 0.08 + Math.abs(combined) * 0.18;
+          const opacity = 0.15 + Math.abs(combined) * 0.35;
 
           const charIdx = Math.floor(
             ((combined + 1) / 2) * (CHARS.length - 1)
