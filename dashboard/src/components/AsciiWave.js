@@ -50,7 +50,7 @@ export default function AsciiWave() {
           const colorIdx =
             colorWave < -0.33 ? 0 : colorWave < 0.33 ? 1 : 2;
 
-          const opacity = 0.15 + Math.abs(combined) * 0.35;
+          const opacity = 0.35 + Math.abs(combined) * 0.55;
 
           const charIdx = Math.floor(
             ((combined + 1) / 2) * (CHARS.length - 1)
