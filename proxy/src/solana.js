@@ -7,10 +7,17 @@ const {
 const fs = require("fs");
 const path = require("path");
 
-const IDL_PATH = path.resolve(
-  __dirname,
-  "../../program/target/idl/keymint_payment.json"
-);
+function loadIDL() {
+  // Try bundled copy first (Vercel), then original path (local)
+  const paths = [
+    path.resolve(__dirname, "../idl/keymint_payment.json"),
+    path.resolve(__dirname, "../../program/target/idl/keymint_payment.json"),
+  ];
+  for (const p of paths) {
+    try { return JSON.parse(fs.readFileSync(p, "utf-8")); } catch {}
+  }
+  throw new Error("IDL file not found");
+}
 
 let _program = null;
 let _connection = null;
@@ -30,7 +37,13 @@ function initialize() {
 
   _connection = new Connection(rpcUrl, "confirmed");
 
-  const walletData = JSON.parse(fs.readFileSync(publisherWalletPath, "utf-8"));
+  // Support env-based keypair (Vercel) or file-based (local)
+  let walletData;
+  if (process.env.PUBLISHER_WALLET_KEYPAIR_JSON) {
+    walletData = JSON.parse(process.env.PUBLISHER_WALLET_KEYPAIR_JSON);
+  } else {
+    walletData = JSON.parse(fs.readFileSync(publisherWalletPath, "utf-8"));
+  }
   _publisherWallet = Keypair.fromSecretKey(Uint8Array.from(walletData));
 
   const wallet = new anchor.Wallet(_publisherWallet);
@@ -38,7 +51,7 @@ function initialize() {
     commitment: "confirmed",
   });
 
-  const idl = JSON.parse(fs.readFileSync(IDL_PATH, "utf-8"));
+  const idl = loadIDL();
   _program = new anchor.Program(idl, provider);
 
   console.log(`[solana] Program ID: ${programId}`);

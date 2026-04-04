@@ -1,0 +1,27 @@
+{
+  "buildCommand": "cd dashboard && npm install && npm run build",
+  "installCommand": "npm install --prefix proxy && npm install --prefix dashboard",
+  "outputDirectory": "dashboard/build",
+  "framework": null,
+  "functions": {
+    "api/proxy.js": {
+      "maxDuration": 30,
+      "includeFiles": "proxy/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/v1/:path*", "destination": "/api/proxy" },
+    { "source": "/health", "destination": "/api/proxy" },
+    { "source": "/api/:path*", "destination": "/api/proxy" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,x-402-payment" }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,6 @@
-require("dotenv").config({ path: require("path").resolve(__dirname, "../.env") });
+if (!process.env.VERCEL) {
+  require("dotenv").config({ path: require("path").resolve(__dirname, "../.env") });
+}
 
 const express = require("express");
 const cors = require("cors");
@@ -325,11 +327,17 @@ app.get("/health", (_req, res) => {
 
 // ─────────── Server ───────────
 
-const PORT = process.env.PROXY_PORT || 4001;
-app.listen(PORT, () => {
-  console.log(`[keymint-proxy] Running on port ${PORT}`);
-  console.log(`[keymint-proxy] Endpoints:`);
-  for (const [pattern, cfg] of Object.entries(config.endpoints)) {
-    console.log(`  ${pattern} → $${cfg.price / 1_000_000} USDC`);
-  }
-});
+// Export for Vercel serverless
+module.exports = app;
+
+// Local dev: listen on port
+if (!process.env.VERCEL) {
+  const PORT = process.env.PROXY_PORT || 4001;
+  app.listen(PORT, () => {
+    console.log(`[keymint-proxy] Running on port ${PORT}`);
+    console.log(`[keymint-proxy] Endpoints:`);
+    for (const [pattern, cfg] of Object.entries(config.endpoints)) {
+      console.log(`  ${pattern} → $${cfg.price / 1_000_000} USDC`);
+    }
+  });
+}

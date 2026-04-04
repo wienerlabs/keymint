@@ -17,10 +17,16 @@ const solana = require("./solana");
 const upstream = require("./upstream");
 const payments = require("./payments");
 
-const IDL_PATH = path.resolve(
-  __dirname,
-  "../../program/target/idl/keymint_payment.json"
-);
+function loadIDL() {
+  const paths = [
+    path.resolve(__dirname, "../idl/keymint_payment.json"),
+    path.resolve(__dirname, "../../program/target/idl/keymint_payment.json"),
+  ];
+  for (const p of paths) {
+    try { return JSON.parse(fs.readFileSync(p, "utf-8")); } catch {}
+  }
+  throw new Error("IDL file not found");
+}
 
 /**
  * Execute a full x402 query flow:
@@ -89,7 +95,7 @@ async function executeQuery({ walletName, endpoint, passphrase, onStep }) {
     programId
   );
 
-  const idl = JSON.parse(fs.readFileSync(IDL_PATH, "utf-8"));
+  const idl = loadIDL();
   const dummyWallet = {
     publicKey: payerPubkey,
     signTransaction: async (tx) => tx,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
-const API_BASE = process.env.REACT_APP_PROXY_API_URL || "http://localhost:4001";
+const API_BASE = process.env.REACT_APP_PROXY_API_URL || (process.env.NODE_ENV === "production" ? "" : "http://localhost:4001");
 
 export function useApi(path, interval = null) {
   const [data, setData] = useState(null);

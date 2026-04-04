@@ -1,0 +1,344 @@
+{
+  "address": "EJeBowVHBopARqR3qCNXN7a2iJeM2Zf5c6gd2ZH8Lrs9",
+  "metadata": {
+    "name": "keymint_payment",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "initialize_publisher",
+      "docs": [
+        "Publisher hesabını başlat"
+      ],
+      "discriminator": [
+        66,
+        1,
+        62,
+        232,
+        118,
+        238,
+        23,
+        25
+      ],
+      "accounts": [
+        {
+          "name": "publisher_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  117,
+                  98,
+                  108,
+                  105,
+                  115,
+                  104,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "verify_and_pay",
+      "docs": [
+        "Ödemeyi verify et ve USDC transfer et"
+      ],
+      "discriminator": [
+        232,
+        197,
+        99,
+        115,
+        240,
+        124,
+        158,
+        31
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "publisher_account",
+          "docs": [
+            "Publisher PDA hesabı"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  117,
+                  98,
+                  108,
+                  105,
+                  115,
+                  104,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "publisher_account.authority",
+                "account": "PublisherAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer_token_account",
+          "docs": [
+            "Payer'ın USDC token hesabı"
+          ],
+          "writable": true
+        },
+        {
+          "name": "publisher_token_account",
+          "docs": [
+            "Publisher'ın USDC token hesabı"
+          ],
+          "writable": true
+        },
+        {
+          "name": "audit_log",
+          "docs": [
+            "Audit log PDA — her ödeme için benzersiz"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "timestamp"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "endpoint",
+          "type": "string"
+        },
+        {
+          "name": "timestamp",
+          "type": "i64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "AuditLog",
+      "discriminator": [
+        230,
+        207,
+        176,
+        233,
+        170,
+        130,
+        101,
+        244
+      ]
+    },
+    {
+      "name": "PublisherAccount",
+      "discriminator": [
+        46,
+        184,
+        137,
+        127,
+        251,
+        179,
+        199,
+        241
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "PaymentEvent",
+      "discriminator": [
+        132,
+        136,
+        157,
+        119,
+        91,
+        254,
+        225,
+        20
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidAmount",
+      "msg": "Geçersiz ödeme miktarı"
+    },
+    {
+      "code": 6001,
+      "name": "EndpointTooLong",
+      "msg": "Endpoint çok uzun (max 128 karakter)"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidTokenOwner",
+      "msg": "Token hesabı sahibi eşleşmiyor"
+    },
+    {
+      "code": 6003,
+      "name": "MintMismatch",
+      "msg": "Token mint adresi eşleşmiyor"
+    },
+    {
+      "code": 6004,
+      "name": "Overflow",
+      "msg": "Aritmetik taşma"
+    },
+    {
+      "code": 6005,
+      "name": "TimestampOutOfRange",
+      "msg": "Timestamp aralık dışı (±30 saniye)"
+    }
+  ],
+  "types": [
+    {
+      "name": "AuditLog",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "publisher",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "endpoint",
+            "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "publisher",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "endpoint",
+            "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PublisherAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_earned",
+            "type": "u64"
+          },
+          {
+            "name": "total_requests",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}
