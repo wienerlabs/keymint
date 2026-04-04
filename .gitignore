@@ -1,0 +1,33 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.production
+
+# Anchor / Solana
+program/target/
+!program/target/idl/
+!program/target/idl/keymint_payment.json
+!program/target/deploy/
+!program/target/deploy/program-keypair.json
+program/.anchor/
+test-ledger/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Dashboard
+dashboard/.cache/
+dashboard/node_modules/

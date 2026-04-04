@@ -1,0 +1,28 @@
+{
+  "endpoints": {
+    "/v1/address/:address/portfolio": {
+      "price": 10000,
+      "upstream": "/positions/?filter[positions]=only_simple&currency=usd"
+    },
+    "/v1/address/:address/positions": {
+      "price": 20000,
+      "upstream": "/positions/?currency=usd"
+    },
+    "/v1/tokens/price": {
+      "price": 5000,
+      "upstream": "/v1/chains/"
+    },
+    "/v1/wallets/:address/transactions": {
+      "price": 10000,
+      "upstream": "/transactions/?currency=usd&page[size]=20"
+    },
+    "/v1/wallets/:address/pnl": {
+      "price": 10000,
+      "upstream": "/profit-loss/?currency=usd"
+    },
+    "/v1/fungibles/:id": {
+      "price": 5000,
+      "upstream": "/v1/fungibles/"
+    }
+  }
+}
