@@ -79,9 +79,31 @@ function signTransaction(walletName, txHex, passphrase) {
   return ows.signTransaction(walletName, "solana", txHex, passphrase || "");
 }
 
+/**
+ * Create a new OWS wallet locally and return its Solana address.
+ * @param {string} name - Unique wallet name
+ * @param {string} [passphrase] - Optional passphrase
+ * @returns {{name: string, id: string, solanaAddress: string}}
+ */
+function createWallet(name, passphrase) {
+  const wallet = ows.createWallet(name, passphrase || "");
+  const solAccount = wallet.accounts.find(
+    (a) => a.chainId === "solana" || a.chainId.startsWith("solana:")
+  );
+  if (!solAccount) {
+    throw new Error("OWS wallet created but no Solana account found");
+  }
+  return {
+    name: wallet.name,
+    id: wallet.id,
+    solanaAddress: solAccount.address,
+  };
+}
+
 module.exports = {
   listWallets,
   getWallet,
   getBalance,
   signTransaction,
+  createWallet,
 };

@@ -1,6 +1,15 @@
 import WalletConnect from "./WalletConnect";
 
-export default function Navbar({ activePage, onNavigate, wallet, onWalletConnect, onWalletDisconnect, walletLoading }) {
+export default function Navbar({
+  activePage,
+  onNavigate,
+  wallet,
+  onWalletConnect,
+  onWalletConnectPhantom,
+  phantomAvailable,
+  onWalletDisconnect,
+  walletLoading,
+}) {
   const pages = [
     { key: "overview", label: "Overview" },
     { key: "analytics", label: "Analytics" },
@@ -44,6 +53,8 @@ export default function Navbar({ activePage, onNavigate, wallet, onWalletConnect
         <WalletConnect
           wallet={wallet}
           onConnect={onWalletConnect}
+          onConnectPhantom={onWalletConnectPhantom}
+          phantomAvailable={phantomAvailable}
           onDisconnect={onWalletDisconnect}
           loading={walletLoading}
         />

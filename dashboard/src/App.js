@@ -10,7 +10,15 @@ import { useWallet } from "./hooks/useWallet";
 
 function App() {
   const [page, setPage] = useState("overview");
-  const { wallet, loading, connect, disconnect, refreshBalance } = useWallet();
+  const {
+    wallet,
+    loading,
+    connect,
+    connectPhantom,
+    phantomAvailable,
+    disconnect,
+    refreshBalance,
+  } = useWallet();
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleRefresh = useCallback(() => {
@@ -35,6 +43,8 @@ function App() {
           onNavigate={setPage}
           wallet={wallet}
           onWalletConnect={connect}
+          onWalletConnectPhantom={connectPhantom}
+          phantomAvailable={phantomAvailable}
           onWalletDisconnect={disconnect}
           walletLoading={loading}
         />

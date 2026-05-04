@@ -16,7 +16,7 @@ export default function LiveFeed() {
     <div className="p-6 max-w-6xl mx-auto">
       <PageHeader
         title="Live Feed"
-        description="Last 20 on-chain transactions — refreshes every 3 seconds"
+        description="Publisher view — every paid query to this proxy from any wallet. Refreshes every 3s. (For your own history, use the Query tab.)"
         action={
           <div className="flex items-center gap-2">
             <StatusDot status="online" pulse size="md" />

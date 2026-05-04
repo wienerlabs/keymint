@@ -34,17 +34,55 @@ async function forward(upstreamPath, params = {}, queryParams = {}) {
   let url;
 
   if (params.address && !upstreamPath.startsWith("/v1/")) {
-    // Wallet-scoped endpoint: /v1/wallets/{address}{upstreamPath}
     url = `/v1/wallets/${params.address}${upstreamPath}`;
   } else if (params.id && upstreamPath.startsWith("/v1/fungibles/")) {
-    // Fungible asset by ID: /v1/fungibles/{id}
     url = `${upstreamPath}${params.id}`;
   } else {
     url = upstreamPath;
   }
 
-  const response = await _client.get(url, { params: queryParams });
-  return response.data;
+  try {
+    const response = await _client.get(url, { params: queryParams });
+    return response.data;
+  } catch (err) {
+    throw normalizeUpstreamError(err);
+  }
+}
+
+function normalizeUpstreamError(err) {
+  const status = err.response?.status;
+  let kind;
+  let message;
+  switch (status) {
+    case 401:
+    case 403:
+      kind = "upstream_auth_failed";
+      message = "Upstream authentication failed (check ZERION_API_KEY)";
+      break;
+    case 404:
+      kind = "upstream_not_found";
+      message = "Upstream resource not found";
+      break;
+    case 429:
+      kind = "upstream_rate_limited";
+      message = "Upstream rate limit exceeded";
+      break;
+    case 502:
+    case 503:
+    case 504:
+      kind = "upstream_unavailable";
+      message = "Upstream temporarily unavailable";
+      break;
+    default:
+      kind = status ? "upstream_error" : "upstream_network_error";
+      message = status
+        ? `Upstream returned ${status}`
+        : err.message || "Upstream network error";
+  }
+  const wrapped = new Error(message);
+  wrapped.kind = kind;
+  wrapped.status = status || 502;
+  return wrapped;
 }
 
 module.exports = {
