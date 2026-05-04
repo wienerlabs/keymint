@@ -179,18 +179,21 @@ async function executeQuery({ walletName, endpoint, passphrase, onStep }) {
     message: "Payment confirmed on-chain!",
   });
 
-  // Record payment
-  payments.recordPayment({
-    payer: walletInfo.solanaAddress,
-    endpoint,
-    amount: price,
-    txSignature,
-  });
+  payments.markConsumed(txSignature);
+  solana.invalidateAuditCache();
 
   // Step 8: Forward to upstream
   onStep("forwarding", { message: "Forwarding to upstream API..." });
 
   const data = await upstream.forward(matched.config.upstream, matched.params);
+
+  payments.recordPayment({
+    payer: walletInfo.solanaAddress,
+    endpoint,
+    amount: price,
+    txSignature,
+    data,
+  });
 
   const publisherWallet = solana.getPublisherWallet();
   onStep("complete", {

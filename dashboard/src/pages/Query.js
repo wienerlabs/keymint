@@ -1,4 +1,5 @@
 import QueryPanel from "../components/QueryPanel";
+import MyQueries from "../components/MyQueries";
 import PageHeader from "../components/PageHeader";
 import Badge from "../components/Badge";
 
@@ -17,6 +18,7 @@ export default function Query({ wallet, onRefresh }) {
         }
       />
       <QueryPanel wallet={wallet} onComplete={onRefresh} />
+      <MyQueries wallet={wallet} />
     </div>
   );
 }

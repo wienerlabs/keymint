@@ -69,5 +69,39 @@ export function useQueryStream() {
     setRunning(false);
   }, []);
 
-  return { steps, result, running, error, execute, reset };
+  /**
+   * Run a fully client-side x402 flow (e.g. Phantom signing in the browser).
+   * The supplied `runner(onStep)` returns `{data, txSignature, price}`.
+   * Steps emitted by the runner populate the same UI as the SSE flow.
+   */
+  const runClientFlow = useCallback(async (runner) => {
+    setSteps([]);
+    setResult(null);
+    setError(null);
+    setRunning(true);
+
+    const onStep = (name, detail = {}) => {
+      const evt = { step: name, ...detail, timestamp: Date.now() };
+      setSteps((prev) => [...prev, evt]);
+    };
+
+    try {
+      const out = await runner(onStep);
+      setResult({ data: out.data, txSignature: out.txSignature, price: out.price });
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setRunning(false);
+    }
+  }, []);
+
+  const hydrate = useCallback((snapshot) => {
+    if (!snapshot) return;
+    setSteps(snapshot.steps || []);
+    setResult(snapshot.result || null);
+    setRunning(false);
+    setError(null);
+  }, []);
+
+  return { steps, result, running, error, execute, reset, hydrate, runClientFlow };
 }

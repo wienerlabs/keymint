@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "./Card";
 import Badge from "./Badge";
 import CopyButton from "./CopyButton";
+import { useApi } from "../hooks/useApi";
 import { useQueryStream } from "../hooks/useQueryStream";
+import { runPhantomQuery } from "../lib/phantomPay";
+
+const PROXY_URL =
+  process.env.REACT_APP_PROXY_API_URL ||
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:4001");
 
 const STEP_LABELS = {
   matching: "Matching endpoint...",
@@ -18,25 +24,85 @@ const STEP_LABELS = {
   complete: "Complete!",
 };
 
-const ENDPOINTS = [
-  { value: "/v1/address/{address}/portfolio", label: "Portfolio ($0.01)", needsAddress: true },
-  { value: "/v1/address/{address}/positions", label: "Positions ($0.02)", needsAddress: true },
-  { value: "/v1/wallets/{address}/transactions", label: "Transactions ($0.01)", needsAddress: true },
-  { value: "/v1/wallets/{address}/pnl", label: "PnL ($0.01)", needsAddress: true },
-  { value: "/v1/tokens/price", label: "Token Prices ($0.005)", needsAddress: false },
-  { value: "/v1/fungibles/{id}", label: "Fungible Asset ($0.005)", needsId: true },
-];
+function buildEndpointOptions(configEndpoints) {
+  return (configEndpoints || []).map((ep) => {
+    const value = ep.pattern.replace(/:(\w+)/g, "{$1}");
+    const params = [...ep.pattern.matchAll(/:(\w+)/g)].map((m) => m[1]);
+    const needsAddress = params.includes("address");
+    const needsId = params.includes("id") && !needsAddress;
+    const labelBase = ep.pattern
+      .replace("/v1/", "")
+      .replace(/\/?:\w+/g, "")
+      .replace(/^\//, "")
+      .replace(/\/$/, "")
+      .replace(/\//g, " · ") || ep.pattern;
+    return {
+      value,
+      label: `${labelBase} ($${ep.priceUSD.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")})`,
+      needsAddress,
+      needsId,
+    };
+  });
+}
+
+const LAST_RESULT_KEY = "keymint:lastQueryResult";
 
 export default function QueryPanel({ wallet, onComplete }) {
-  const [address, setAddress] = useState(
-    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+  const { data: cfg } = useApi("/api/config");
+  const endpoints = useMemo(() => buildEndpointOptions(cfg?.endpoints), [cfg]);
+
+  const [address, setAddress] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("keymint:lastAddress") || ""
+      : ""
   );
   const [fungibleId, setFungibleId] = useState("eth");
-  const [selectedEndpoint, setSelectedEndpoint] = useState(ENDPOINTS[0].value);
+  const [selectedEndpoint, setSelectedEndpoint] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [proofOpen, setProofOpen] = useState(false);
-  const { steps, result, running, error, execute, reset } = useQueryStream();
+  const { steps, result, running, error, execute, reset, hydrate, runClientFlow } =
+    useQueryStream();
+  const [wasRestored, setWasRestored] = useState(false);
 
-  const selectedMeta = ENDPOINTS.find((e) => e.value === selectedEndpoint);
+  useEffect(() => {
+    if (!selectedEndpoint && endpoints.length > 0) {
+      setSelectedEndpoint(endpoints[0].value);
+    }
+  }, [endpoints, selectedEndpoint]);
+
+  // Restore last query state on mount so users don't lose their work on F5 / tab switch.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = localStorage.getItem(LAST_RESULT_KEY);
+    if (!raw) return;
+    try {
+      const snap = JSON.parse(raw);
+      if (snap.steps && snap.result) {
+        hydrate(snap);
+        setWasRestored(true);
+      }
+    } catch {
+      localStorage.removeItem(LAST_RESULT_KEY);
+    }
+  }, [hydrate]);
+
+  // Persist the latest completed query so it survives reload.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!result || running) return;
+    const completeStep = steps.find((s) => s.step === "complete");
+    if (!completeStep) return;
+    const snap = {
+      steps,
+      result,
+      savedAt: Date.now(),
+      endpointLabel: completeStep.endpoint || selectedEndpoint,
+    };
+    localStorage.setItem(LAST_RESULT_KEY, JSON.stringify(snap));
+  }, [result, running, steps, selectedEndpoint]);
+
+  const selectedMeta = endpoints.find((e) => e.value === selectedEndpoint);
   const needsAddress = selectedMeta?.needsAddress;
   const needsId = selectedMeta?.needsId;
 
@@ -47,6 +113,9 @@ export default function QueryPanel({ wallet, onComplete }) {
     if (endpoint.includes("{address}")) {
       if (!address.trim()) return;
       endpoint = endpoint.replace("{address}", address.trim());
+      if (typeof window !== "undefined") {
+        localStorage.setItem("keymint:lastAddress", address.trim());
+      }
     }
     if (endpoint.includes("{id}")) {
       if (!fungibleId.trim()) return;
@@ -54,12 +123,32 @@ export default function QueryPanel({ wallet, onComplete }) {
     }
 
     setProofOpen(false);
-    execute(wallet.name, endpoint, "");
+    setWasRestored(false);
+
+    if (wallet.type === "phantom") {
+      runClientFlow(async (onStep) =>
+        runPhantomQuery({
+          proxyUrl: PROXY_URL,
+          rpcUrl: "https://api.devnet.solana.com",
+          endpoint,
+          phantom: wallet.provider,
+          onStep,
+        })
+      );
+      return;
+    }
+
+    // Default: OWS via SSE on the proxy
+    execute(wallet.name, endpoint, passphrase);
   }
 
   function handleReset() {
     setProofOpen(false);
+    setWasRestored(false);
     reset();
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(LAST_RESULT_KEY);
+    }
   }
 
   const priceStep = steps.find((s) => s.step === "price_found");
@@ -69,8 +158,15 @@ export default function QueryPanel({ wallet, onComplete }) {
     <Card>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold">Live Query</h2>
-        {running && <Badge variant="yellow">Running</Badge>}
-        {completeStep && !running && <Badge variant="green">Complete</Badge>}
+        <div className="flex items-center gap-2">
+          {running && <Badge variant="yellow">Running</Badge>}
+          {completeStep && !running && wasRestored && (
+            <Badge variant="gray">Restored from last session</Badge>
+          )}
+          {completeStep && !running && !wasRestored && (
+            <Badge variant="green">Complete</Badge>
+          )}
+        </div>
       </div>
 
       {!wallet ? (
@@ -90,14 +186,18 @@ export default function QueryPanel({ wallet, onComplete }) {
               <select
                 value={selectedEndpoint}
                 onChange={(e) => setSelectedEndpoint(e.target.value)}
-                disabled={running}
+                disabled={running || endpoints.length === 0}
                 className="w-full border-2 border-black rounded-lg px-3 py-2 text-sm bg-white"
               >
-                {ENDPOINTS.map((ep) => (
-                  <option key={ep.value} value={ep.value}>
-                    {ep.label}
-                  </option>
-                ))}
+                {endpoints.length === 0 ? (
+                  <option>Loading endpoints…</option>
+                ) : (
+                  endpoints.map((ep) => (
+                    <option key={ep.value} value={ep.value}>
+                      {ep.label}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -132,6 +232,32 @@ export default function QueryPanel({ wallet, onComplete }) {
                 />
               </div>
             )}
+
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((v) => !v)}
+                className="text-xs text-gray-500 hover:text-black underline"
+              >
+                {showAdvanced ? "Hide" : "Show"} advanced
+              </button>
+              {showAdvanced && (
+                <div className="mt-2">
+                  <label className="text-xs font-bold uppercase tracking-wide text-gray-500 block mb-1">
+                    OWS Passphrase (optional)
+                  </label>
+                  <input
+                    type="password"
+                    value={passphrase}
+                    onChange={(e) => setPassphrase(e.target.value)}
+                    disabled={running}
+                    placeholder="Leave empty if your OWS wallet has no passphrase"
+                    autoComplete="off"
+                    className="w-full border-2 border-black rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              )}
+            </div>
 
             <div className="flex gap-2">
               <button

@@ -12,7 +12,20 @@ const upstream = require("./src/upstream");
 const payments = require("./src/payments");
 
 const app = express();
-app.use(cors());
+
+const corsOrigin = process.env.CORS_ORIGIN || "*";
+const allowedOrigins =
+  corsOrigin === "*"
+    ? "*"
+    : corsOrigin.split(",").map((s) => s.trim()).filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "x-402-payment", "x-publisher-key"],
+  })
+);
 app.use(express.json());
 
 // Read config
@@ -54,6 +67,12 @@ function matchEndpoint(requestPath) {
     }
   }
   return null;
+}
+
+function patternMatches(pattern, recordedEndpoint) {
+  if (recordedEndpoint === pattern) return true;
+  const regexStr = "^" + pattern.replace(/:(\w+)/g, "([^/]+)") + "$";
+  return new RegExp(regexStr).test(recordedEndpoint);
 }
 
 async function x402Handler(req, res) {
@@ -103,6 +122,13 @@ async function x402Handler(req, res) {
     });
   }
 
+  if (payments.isConsumed(txSignature)) {
+    return res.status(402).json({
+      error: "Payment already consumed",
+      detail: "This transaction signature has already been used to unlock a request",
+    });
+  }
+
   let verificationResult;
   try {
     verificationResult = await solana.verifyPayment(txSignature, endpointConfig.price, req.path);
@@ -110,25 +136,41 @@ async function x402Handler(req, res) {
     return res.status(402).json({ error: "Payment verification failed", detail: err.message });
   }
 
-  payments.recordPayment({
-    payer: verificationResult.payer,
-    endpoint: req.path,
-    amount: endpointConfig.price,
-    txSignature,
-  });
+  payments.markConsumed(txSignature);
+  solana.invalidateAuditCache();
 
   try {
     const data = await upstream.forward(endpointConfig.upstream, params, req.query);
+    payments.recordPayment({
+      payer: verificationResult.payer,
+      endpoint: req.path,
+      amount: endpointConfig.price,
+      txSignature,
+      data,
+    });
     return res.json({
       status: "ok",
       data,
       payment: { txSignature, amount: endpointConfig.price, payer: verificationResult.payer },
     });
   } catch (err) {
-    const status = err.response?.status || 502;
+    // Forward failed after the on-chain payment was already accepted. We still
+    // record the payment (without data) so the audit trail and dashboard reflect
+    // the loss and the user can see the failure on the explorer.
+    payments.recordPayment({
+      payer: verificationResult.payer,
+      endpoint: req.path,
+      amount: endpointConfig.price,
+      txSignature,
+    });
+    const status = err.status || 502;
+    console.warn(
+      `[keymint-proxy] Upstream failed after payment: ${err.kind || "error"} (${status}) tx=${txSignature}`
+    );
     return res.status(status).json({
-      error: "Upstream API error",
-      detail: err.response?.data || err.message,
+      error: err.kind || "upstream_error",
+      detail: err.message,
+      paidTxSignature: txSignature,
     });
   }
 }
@@ -168,15 +210,22 @@ app.get("/api/endpoints", async (_req, res) => {
     const onChainStats = await solana.getOnChainEndpointStats();
     const endpointsWithPrices = Object.entries(config.endpoints).map(
       ([pattern, cfg]) => {
-        const stat = onChainStats.endpoints.find(
-          (s) => s.endpoint.includes(pattern.split(":")[0]) || s.endpoint === pattern
-        ) || { count: 0, earned: 0 };
+        const aggregate = onChainStats.endpoints.reduce(
+          (acc, s) => {
+            if (patternMatches(pattern, s.endpoint)) {
+              acc.count += s.count;
+              acc.earned += s.earned;
+            }
+            return acc;
+          },
+          { count: 0, earned: 0 }
+        );
         return {
           pattern,
           price: cfg.price,
           priceUSD: cfg.price / 1_000_000,
-          count: stat.count,
-          earned: stat.earned,
+          count: aggregate.count,
+          earned: aggregate.earned,
         };
       }
     );
@@ -192,15 +241,16 @@ app.get("/api/payments", async (req, res) => {
   }
   try {
     const limit = parseInt(req.query.limit) || 20;
-    const onChainPayments = await solana.getOnChainAuditLogs(limit);
-    const recentMemory = payments.getRecentPayments(100);
-    const enriched = onChainPayments.map((p) => {
-      const match = recentMemory.find(
-        (m) =>
-          m.payer === p.payer &&
-          m.amount === p.amount &&
-          Math.abs(new Date(m.timestamp).getTime() - new Date(p.timestamp).getTime()) < 60000
-      );
+    const payerFilter = req.query.payer;
+    // When filtering by payer we read more rows from chain so the post-filter
+    // window still has at most `limit` matches.
+    const fetchLimit = payerFilter ? Math.max(limit * 5, 50) : limit;
+    const onChainPayments = await solana.getOnChainAuditLogs(fetchLimit);
+    const filtered = payerFilter
+      ? onChainPayments.filter((p) => p.payer === payerFilter)
+      : onChainPayments;
+    const enriched = filtered.slice(0, limit).map((p) => {
+      const match = payments.findMatchingRecord(p.payer, p.amount, p.timestamp);
       return {
         ...p,
         txSignature: match?.txSignature || null,
@@ -215,7 +265,45 @@ app.get("/api/payments", async (req, res) => {
   }
 });
 
+function requirePublisherKey(req, res) {
+  const expected = process.env.PUBLISHER_API_KEY;
+  if (!expected) {
+    res.status(503).json({
+      error: "Pricing API disabled",
+      detail: "Set PUBLISHER_API_KEY in .env to enable price updates",
+    });
+    return false;
+  }
+  const provided = req.headers["x-publisher-key"];
+  if (provided !== expected) {
+    res.status(401).json({ error: "Invalid publisher key" });
+    return false;
+  }
+  return true;
+}
+
+app.get("/api/payments/:txSig", (req, res) => {
+  const { txSig } = req.params;
+  if (!txSig || !/^[1-9A-HJ-NP-Za-km-z]{60,100}$/.test(txSig)) {
+    return res.status(400).json({ error: "Invalid txSignature" });
+  }
+  const record = payments.getByTxSignature(txSig);
+  if (!record) {
+    return res.status(404).json({
+      error: "Not found",
+      detail:
+        "No in-memory record for this signature. Either it predates this proxy session, or it has aged out of the recent buffer (max 100).",
+      explorerUrl: `https://explorer.solana.com/tx/${txSig}?cluster=devnet`,
+    });
+  }
+  res.json({
+    ...record,
+    explorerUrl: `https://explorer.solana.com/tx/${txSig}?cluster=devnet`,
+  });
+});
+
 app.put("/api/endpoints/price", (req, res) => {
+  if (!requirePublisherKey(req, res)) return;
   const { endpoint, price } = req.body;
   if (!endpoint || typeof price !== "number" || price <= 0) {
     return res.status(400).json({ error: "Valid endpoint and price required" });
@@ -224,11 +312,16 @@ app.put("/api/endpoints/price", (req, res) => {
     return res.status(404).json({ error: "Endpoint not found" });
   }
   config.endpoints[endpoint].price = price;
-  // Only write to disk in local dev (Vercel filesystem is readonly)
   if (!process.env.VERCEL) {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   }
-  res.json({ success: true, endpoint, newPrice: price, newPriceUSD: price / 1_000_000 });
+  res.json({
+    success: true,
+    endpoint,
+    newPrice: price,
+    newPriceUSD: price / 1_000_000,
+    persistent: !process.env.VERCEL,
+  });
 });
 
 // ─────────── OWS Wallet API ───────────
@@ -241,6 +334,34 @@ app.get("/api/wallets", (_req, res) => {
     const owsModule = require("./src/ows");
     const wallets = owsModule.listWallets();
     res.json(wallets);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/wallets", (req, res) => {
+  if (process.env.VERCEL) {
+    return res.status(501).json({
+      error: "Wallet creation not available in cloud mode",
+      detail: "Run the dashboard locally to create OWS wallets",
+    });
+  }
+  const name = (req.body?.name || "").trim();
+  const passphrase = req.body?.passphrase || "";
+  if (!name || !/^[a-zA-Z0-9_-]{2,40}$/.test(name)) {
+    return res.status(400).json({
+      error: "Invalid name",
+      detail: "Use 2-40 chars: letters, digits, underscore, hyphen",
+    });
+  }
+  try {
+    const owsModule = require("./src/ows");
+    const existing = owsModule.listWallets().find((w) => w.name === name);
+    if (existing) {
+      return res.status(409).json({ error: "Wallet name already exists" });
+    }
+    const wallet = owsModule.createWallet(name, passphrase);
+    res.status(201).json(wallet);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -321,12 +442,27 @@ app.get("/api/query/stream", async (req, res) => {
   res.end();
 });
 
-app.get("/api/config", (_req, res) => {
+app.get("/api/config", (req, res) => {
+  const pkg = require("./package.json");
+  const proto = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.headers["x-forwarded-host"] || req.get("host");
   res.json({
-    endpoints: config.endpoints,
+    version: pkg.version,
+    endpoints: Object.entries(config.endpoints).map(([pattern, cfg]) => ({
+      pattern,
+      price: cfg.price,
+      priceUSD: cfg.price / 1_000_000,
+    })),
     programId: process.env.PROGRAM_ID,
     network: process.env.SOLANA_NETWORK || "devnet",
     usdcMint: process.env.USDC_MINT,
+    publisher: process.env.PUBLISHER_WALLET || null,
+    proxyUrl: `${proto}://${host}`,
+    runtime: {
+      vercel: !!process.env.VERCEL,
+      persistent: !process.env.VERCEL,
+      pricingApiEnabled: !!process.env.PUBLISHER_API_KEY,
+    },
   });
 });
 

@@ -7,6 +7,7 @@ import { useApi } from "../hooks/useApi";
 
 export default function Overview() {
   const { data: stats, loading, error, refetch } = useApi("/api/stats", 5000);
+  const { data: cfg } = useApi("/api/config");
 
   const totalEarnedUSDC = stats
     ? (stats.totalEarned / 1_000_000).toFixed(4)
@@ -111,12 +112,14 @@ export default function Overview() {
         <Card className="bg-gray-50">
           <div className="flex items-center gap-3 mb-3">
             <span className="font-bold text-sm">System Info</span>
-            <Badge variant="gray">v1.0.0</Badge>
+            {cfg?.version && <Badge variant="gray">v{cfg.version}</Badge>}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
             <div>
               <div className="text-gray-500 uppercase tracking-wide mb-1">Network</div>
-              <div className="font-bold">Solana Devnet</div>
+              <div className="font-bold">
+                {cfg?.network ? `Solana ${cfg.network[0].toUpperCase()}${cfg.network.slice(1)}` : "—"}
+              </div>
             </div>
             <div>
               <div className="text-gray-500 uppercase tracking-wide mb-1">Protocol</div>
@@ -128,7 +131,9 @@ export default function Overview() {
             </div>
             <div>
               <div className="text-gray-500 uppercase tracking-wide mb-1">Proxy</div>
-              <div className="font-bold">localhost:4001</div>
+              <div className="font-bold break-all">
+                {cfg?.proxyUrl?.replace(/^https?:\/\//, "") || "—"}
+              </div>
             </div>
           </div>
         </Card>

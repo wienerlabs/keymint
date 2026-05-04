@@ -4,10 +4,11 @@ const API_BASE = process.env.REACT_APP_PROXY_API_URL || (process.env.NODE_ENV ==
 
 export function useApi(path, interval = null) {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!!path);
   const [error, setError] = useState(null);
 
   const fetchData = useCallback(async () => {
+    if (!path) return;
     try {
       const res = await fetch(`${API_BASE}${path}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -22,23 +23,33 @@ export function useApi(path, interval = null) {
   }, [path]);
 
   useEffect(() => {
+    if (!path) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     fetchData();
 
     if (interval) {
       const id = setInterval(fetchData, interval);
       return () => clearInterval(id);
     }
-  }, [fetchData, interval]);
+  }, [path, fetchData, interval]);
 
   return { data, loading, error, refetch: fetchData };
 }
 
-export async function updatePrice(endpoint, price) {
+export async function updatePrice(endpoint, price, publisherKey) {
+  const headers = { "Content-Type": "application/json" };
+  if (publisherKey) headers["x-publisher-key"] = publisherKey;
   const res = await fetch(`${API_BASE}/api/endpoints/price`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ endpoint, price }),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || body.detail || `HTTP ${res.status}`);
+  }
+  return body;
 }

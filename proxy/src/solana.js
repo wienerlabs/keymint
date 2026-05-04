@@ -23,6 +23,41 @@ let _program = null;
 let _connection = null;
 let _publisherWallet = null;
 
+const AUDIT_CACHE_TTL_MS = 5000;
+let _auditCache = null;
+let _auditCacheAt = 0;
+let _auditFetch = null;
+
+async function fetchAuditLogs() {
+  const now = Date.now();
+  if (_auditCache && now - _auditCacheAt < AUDIT_CACHE_TTL_MS) {
+    return _auditCache;
+  }
+  if (_auditFetch) {
+    return _auditFetch;
+  }
+  _auditFetch = (async () => {
+    try {
+      const all = await _program.account.auditLog.all();
+      _auditCache = all;
+      _auditCacheAt = Date.now();
+      return all;
+    } catch {
+      _auditCache = [];
+      _auditCacheAt = Date.now();
+      return [];
+    } finally {
+      _auditFetch = null;
+    }
+  })();
+  return _auditFetch;
+}
+
+function invalidateAuditCache() {
+  _auditCache = null;
+  _auditCacheAt = 0;
+}
+
 /** Initialize Solana connection and Anchor program */
 function initialize() {
   const rpcUrl = process.env.SOLANA_RPC_URL;
@@ -60,13 +95,16 @@ function initialize() {
 }
 
 /**
- * Verify a payment transaction on-chain
- * @param {string} txSignature - Transaction signature
- * @param {number} expectedAmount - Expected USDC amount (smallest unit)
- * @param {string} endpoint - Requested endpoint
- * @returns {Promise<{verified: boolean, payer: string}>}
+ * Verify a payment transaction on-chain.
+ * Decodes the verify_and_pay instruction and asserts that the on-chain
+ * amount and endpoint match the expected values for this request.
+ *
+ * @param {string} txSignature
+ * @param {number} expectedAmount - USDC base units the proxy will charge
+ * @param {string} expectedEndpoint - Path the caller is requesting (e.g. /v1/address/.../portfolio)
+ * @returns {Promise<{verified: boolean, payer: string, amount: number, endpoint: string}>}
  */
-async function verifyPayment(txSignature, expectedAmount, endpoint) {
+async function verifyPayment(txSignature, expectedAmount, expectedEndpoint) {
   const tx = await _connection.getTransaction(txSignature, {
     commitment: "confirmed",
     maxSupportedTransactionVersion: 0,
@@ -85,19 +123,80 @@ async function verifyPayment(txSignature, expectedAmount, endpoint) {
     ? tx.transaction.message.staticAccountKeys.map((k) => k.toBase58())
     : tx.transaction.message.accountKeys.map((k) => k.toBase58());
 
-  if (!accountKeys.includes(programId.toBase58())) {
+  const programIdIndex = accountKeys.indexOf(programId.toBase58());
+  if (programIdIndex === -1) {
     throw new Error("Transaction does not invoke the correct program ID");
   }
 
-  const logs = tx.meta?.logMessages || [];
-  const paymentLog = logs.find((log) => log.includes("lamports, endpoint:"));
+  const compiledInstructions =
+    tx.transaction.message.compiledInstructions ||
+    tx.transaction.message.instructions ||
+    [];
 
-  if (!paymentLog) {
-    throw new Error("Payment verification log not found in transaction");
+  const decoded = decodeVerifyAndPay(compiledInstructions, programIdIndex);
+  if (!decoded) {
+    throw new Error("verify_and_pay instruction not found in transaction");
+  }
+
+  if (decoded.amount !== expectedAmount) {
+    throw new Error(
+      `Payment amount mismatch — paid ${decoded.amount}, required ${expectedAmount}`
+    );
+  }
+
+  if (decoded.endpoint !== expectedEndpoint) {
+    throw new Error(
+      `Payment endpoint mismatch — paid for "${decoded.endpoint}", requested "${expectedEndpoint}"`
+    );
   }
 
   const payer = accountKeys[0];
-  return { verified: true, payer };
+  return {
+    verified: true,
+    payer,
+    amount: decoded.amount,
+    endpoint: decoded.endpoint,
+  };
+}
+
+/**
+ * Decode the verify_and_pay Anchor instruction from a confirmed transaction.
+ * Returns null if no matching instruction is present.
+ */
+function decodeVerifyAndPay(compiledInstructions, programIdIndex) {
+  for (const ix of compiledInstructions) {
+    if (ix.programIdIndex !== programIdIndex) continue;
+
+    const raw = ix.data;
+    let buf;
+    if (Buffer.isBuffer(raw)) {
+      buf = raw;
+    } else if (raw instanceof Uint8Array) {
+      buf = Buffer.from(raw);
+    } else if (typeof raw === "string") {
+      // Legacy message format: base58-encoded
+      const bs58 = require("bs58").default || require("bs58");
+      buf = Buffer.from(bs58.decode(raw));
+    } else if (Array.isArray(raw)) {
+      buf = Buffer.from(raw);
+    } else {
+      continue;
+    }
+
+    try {
+      const decoded = _program.coder.instruction.decode(buf);
+      if (decoded && decoded.name === "verifyAndPay") {
+        return {
+          amount: Number(decoded.data.amount),
+          endpoint: decoded.data.endpoint,
+          timestamp: Number(decoded.data.timestamp),
+        };
+      }
+    } catch {
+      // not our instruction, continue
+    }
+  }
+  return null;
 }
 
 /** Compute publisher PDA address */
@@ -170,59 +269,48 @@ async function buildPaymentInstruction(amount, endpoint) {
  * @returns {Promise<Array>} Audit log records
  */
 async function getOnChainAuditLogs(limit = 20) {
-  try {
-    const allAuditLogs = await _program.account.auditLog.all();
-    const sorted = allAuditLogs
-      .map((log) => ({
-        payer: log.account.payer.toBase58(),
-        publisher: log.account.publisher.toBase58(),
-        amount: log.account.amount.toNumber(),
-        endpoint: log.account.endpoint,
-        timestamp: new Date(
-          log.account.timestamp.toNumber() * 1000
-        ).toISOString(),
-        timestampRaw: log.account.timestamp.toNumber(),
-        publicKey: log.publicKey.toBase58(),
-      }))
-      .sort((a, b) => b.timestampRaw - a.timestampRaw);
-
-    return sorted.slice(0, limit);
-  } catch {
-    return [];
-  }
+  const allAuditLogs = await fetchAuditLogs();
+  return allAuditLogs
+    .map((log) => ({
+      payer: log.account.payer.toBase58(),
+      publisher: log.account.publisher.toBase58(),
+      amount: log.account.amount.toNumber(),
+      endpoint: log.account.endpoint,
+      timestamp: new Date(log.account.timestamp.toNumber() * 1000).toISOString(),
+      timestampRaw: log.account.timestamp.toNumber(),
+      publicKey: log.publicKey.toBase58(),
+    }))
+    .sort((a, b) => b.timestampRaw - a.timestampRaw)
+    .slice(0, limit);
 }
 
 /** Compute endpoint stats from on-chain AuditLog accounts */
 async function getOnChainEndpointStats() {
-  try {
-    const allAuditLogs = await _program.account.auditLog.all();
-    const stats = {};
-    const callers = new Set();
+  const allAuditLogs = await fetchAuditLogs();
+  const stats = {};
+  const callers = new Set();
 
-    for (const log of allAuditLogs) {
-      const endpoint = log.account.endpoint;
-      const amount = log.account.amount.toNumber();
-      const payer = log.account.payer.toBase58();
+  for (const log of allAuditLogs) {
+    const endpoint = log.account.endpoint;
+    const amount = log.account.amount.toNumber();
+    const payer = log.account.payer.toBase58();
 
-      if (!stats[endpoint]) {
-        stats[endpoint] = { count: 0, earned: 0 };
-      }
-      stats[endpoint].count += 1;
-      stats[endpoint].earned += amount;
-      callers.add(payer);
+    if (!stats[endpoint]) {
+      stats[endpoint] = { count: 0, earned: 0 };
     }
-
-    return {
-      endpoints: Object.entries(stats).map(([endpoint, s]) => ({
-        endpoint,
-        count: s.count,
-        earned: s.earned,
-      })),
-      activeCallers: callers.size,
-    };
-  } catch {
-    return { endpoints: [], activeCallers: 0 };
+    stats[endpoint].count += 1;
+    stats[endpoint].earned += amount;
+    callers.add(payer);
   }
+
+  return {
+    endpoints: Object.entries(stats).map(([endpoint, s]) => ({
+      endpoint,
+      count: s.count,
+      earned: s.earned,
+    })),
+    activeCallers: callers.size,
+  };
 }
 
 function getConnection() {
@@ -246,6 +334,7 @@ module.exports = {
   buildPaymentInstruction,
   getOnChainAuditLogs,
   getOnChainEndpointStats,
+  invalidateAuditCache,
   getConnection,
   getPublisherWallet,
   getProgram,
