@@ -24,6 +24,9 @@ test-ledger/
 .DS_Store
 Thumbs.db
 
+# Claude
+.claude/
+
 # Logs
 *.log
 npm-debug.log*
