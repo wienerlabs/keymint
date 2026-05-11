@@ -1,4 +1,6 @@
-if (!process.env.VERCEL) {
+const IS_SERVERLESS = !!(process.env.VERCEL || process.env.NETLIFY);
+
+if (!IS_SERVERLESS) {
   require("dotenv").config({ path: require("path").resolve(__dirname, "../.env") });
 }
 
@@ -46,8 +48,8 @@ function ensureInitialized() {
   }
 }
 
-// Initialize eagerly in local dev (non-Vercel)
-if (!process.env.VERCEL) {
+// Initialize eagerly in local dev (non-serverless)
+if (!IS_SERVERLESS) {
   ensureInitialized();
 }
 
@@ -312,7 +314,7 @@ app.put("/api/endpoints/price", (req, res) => {
     return res.status(404).json({ error: "Endpoint not found" });
   }
   config.endpoints[endpoint].price = price;
-  if (!process.env.VERCEL) {
+  if (!IS_SERVERLESS) {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   }
   res.json({
@@ -320,14 +322,14 @@ app.put("/api/endpoints/price", (req, res) => {
     endpoint,
     newPrice: price,
     newPriceUSD: price / 1_000_000,
-    persistent: !process.env.VERCEL,
+    persistent: !IS_SERVERLESS,
   });
 });
 
 // ─────────── OWS Wallet API ───────────
 
 app.get("/api/wallets", (_req, res) => {
-  if (process.env.VERCEL) {
+  if (IS_SERVERLESS) {
     return res.json([]);
   }
   try {
@@ -340,7 +342,7 @@ app.get("/api/wallets", (_req, res) => {
 });
 
 app.post("/api/wallets", (req, res) => {
-  if (process.env.VERCEL) {
+  if (IS_SERVERLESS) {
     return res.status(501).json({
       error: "Wallet creation not available in cloud mode",
       detail: "Run the dashboard locally to create OWS wallets",
@@ -368,7 +370,7 @@ app.post("/api/wallets", (req, res) => {
 });
 
 app.get("/api/wallets/:name", async (req, res) => {
-  if (process.env.VERCEL) {
+  if (IS_SERVERLESS) {
     return res.status(404).json({ error: "OWS wallets not available in cloud mode" });
   }
   try {
@@ -407,7 +409,7 @@ app.get("/api/balance/:address", async (req, res) => {
 // ─────────── Query Execution with SSE ───────────
 
 app.get("/api/query/stream", async (req, res) => {
-  if (process.env.VERCEL) {
+  if (IS_SERVERLESS) {
     return res.status(501).json({ error: "SSE streaming not supported in serverless mode. Use the agent-sdk CLI locally." });
   }
   try { ensureInitialized(); } catch (err) {
@@ -460,7 +462,9 @@ app.get("/api/config", (req, res) => {
     proxyUrl: `${proto}://${host}`,
     runtime: {
       vercel: !!process.env.VERCEL,
-      persistent: !process.env.VERCEL,
+      netlify: !!process.env.NETLIFY,
+      serverless: IS_SERVERLESS,
+      persistent: !IS_SERVERLESS,
       pricingApiEnabled: !!process.env.PUBLISHER_API_KEY,
     },
   });
@@ -474,7 +478,7 @@ app.get("/health", (_req, res) => {
 
 module.exports = app;
 
-if (!process.env.VERCEL) {
+if (!IS_SERVERLESS) {
   const PORT = process.env.PROXY_PORT || 4001;
   app.listen(PORT, () => {
     console.log(`[keymint-proxy] Running on port ${PORT}`);

@@ -1,0 +1,54 @@
+[build]
+  base = "."
+  command = "npm install --prefix proxy && npm install --prefix dashboard && npm run build --prefix dashboard && cp presentation.html dashboard/build/presentation.html && cp keymint_demo.mp4 dashboard/build/keymint_demo.mp4 && mkdir -p dashboard/build/dashboard/public && cp dashboard/public/keymint.png dashboard/build/dashboard/public/keymint.png"
+  publish = "dashboard/build"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
+  CI = "false"
+  DISABLE_ESLINT_PLUGIN = "true"
+
+[functions]
+  included_files = ["proxy/**", "proxy/idl/**", "proxy/config.json"]
+
+[functions."proxy"]
+  timeout = 26
+
+[[redirects]]
+  from = "/v1/*"
+  to = "/.netlify/functions/proxy/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/proxy/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/proxy/health"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET,POST,PUT,DELETE,OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type,x-402-payment,x-publisher-key"
+
+[[headers]]
+  for = "/v1/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET,POST,PUT,DELETE,OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type,x-402-payment"

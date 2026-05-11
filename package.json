@@ -1,0 +1,12 @@
+{
+  "name": "keymint",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Keymint root package — pulls in serverless-http for Netlify Functions wrapper.",
+  "scripts": {
+    "build": "npm install --prefix proxy && npm install --prefix dashboard && npm run build --prefix dashboard"
+  },
+  "dependencies": {
+    "serverless-http": "^3.2.0"
+  }
+}
